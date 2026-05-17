@@ -24,8 +24,6 @@ class AuthenticatedSessionController extends Controller
     public function store(LoginRequest $request): RedirectResponse
     {
         $email = $request->email;
-
-        // Claves de sesión únicas por email
         $keyIntentos  = 'login_intentos_'  . md5($email);
         $keyBloqueado = 'login_bloqueado_' . md5($email);
         $keyHasta     = 'login_hasta_'     . md5($email);
@@ -60,7 +58,6 @@ class AuthenticatedSessionController extends Controller
             ]);
         }
 
-        // Verificar contraseña
         if (!Hash::check($request->password, $user->password)) {
 
             $intentos = Session::get($keyIntentos, 0) + 1;
@@ -83,7 +80,7 @@ class AuthenticatedSessionController extends Controller
             ]);
         }
 
-        // Login exitoso - limpiar sesión de intentos
+       
         Session::forget([$keyIntentos, $keyBloqueado, $keyHasta]);
 
         Auth::login($user, $request->boolean('remember'));

@@ -341,7 +341,14 @@
             <h5>@yield('page-title', 'FinanzasApp')</h5>
             <small>@yield('page-subtitle', now()->locale('es')->isoFormat('MMMM YYYY'))</small>
         </div>
-        <div class="fecha-badge">{{ now()->locale('es')->isoFormat('D MMMM YYYY') }}</div>
+        <div style="display:flex; align-items:center; gap:8px;">
+             @if(auth()->user()->isAdmin())
+                <button style="background:#D85A30; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer;">📄 PDF</button>
+                <button style="background:#3266ad; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer;">📊 Gráficos</button>
+            @endif
+    <div class="fecha-badge">{{ now()->locale('es')->isoFormat('D MMMM YYYY') }}</div> 
+
+</div>
     </div>
 
     <div class="page-body">
