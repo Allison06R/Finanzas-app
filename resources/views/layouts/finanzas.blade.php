@@ -344,7 +344,7 @@
         <div style="display:flex; align-items:center; gap:8px;">
              @if(auth()->user()->isAdmin())
                 <button style="background:#D85A30; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer;">📄 PDF</button>
-                <button style="background:#3266ad; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer;">📊 Gráficos</button>
+                <button onclick="mostrarGraficos()" style="background:#3266ad; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer;">📊 Gráficos</button>
             @endif
     <div class="fecha-badge">{{ now()->locale('es')->isoFormat('D MMMM YYYY') }}</div> 
 
@@ -367,6 +367,92 @@
         @yield('content')
     </div>
 </div>
+{{-- Modal Gráficos Admin --}}
+<div id="modalGraficos" style="display:none; position:fixed; top:0; left:0; width:100%; height:100%; background:rgba(0,0,0,0.5); z-index:9999; justify-content:center; align-items:center;">
+    <div style="background:white; border-radius:12px; padding:2rem; width:90%; max-width:900px; max-height:85vh; overflow-y:auto;">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1.5rem;">
+            <h5 style="margin:0; color:#0F6E56;">📊 Gráficos de Finanzas</h5>
+            <button onclick="cerrarGraficos()" style="background:none; border:none; font-size:20px; cursor:pointer;">✕</button>
+        </div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;">
+            <div>
+                <h6 style="text-align:center; color:#888780; font-size:11px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:1rem;">Gastos vs Ingresos</h6>
+                <div id="chartBarras" style="height:300px;"></div>
+            </div>
+            <div>
+                <h6 style="text-align:center; color:#888780; font-size:11px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:1rem;">Distribución General</h6>
+                <div id="chartPie" style="height:300px;"></div>
+            </div>
+        </div>
+    </div>
+</div>
 
+<script type="text/javascript" src="https://www.gstatic.com/charts/loader.js"></script>
+<script>
+google.charts.load('current', {'packages':['corechart', 'bar']});
+
+function mostrarGraficos() {
+    document.getElementById('modalGraficos').style.display = 'flex';
+    google.charts.setOnLoadCallback(dibujarGraficos);
+}
+
+function cerrarGraficos() {
+    document.getElementById('modalGraficos').style.display = 'none';
+}
+
+function dibujarGraficos() {
+    const totalGastos   = {{ \App\Models\Gasto::sum('monto') ?? 0 }};
+    const totalIngresos = {{ \App\Models\Ingreso::sum('monto') ?? 0 }};
+    const totalAhorros  = {{ \App\Models\Ahorro::sum('monto_actual') ?? 0 }};
+    const totalDeudas   = {{ \App\Models\Deuda::sum('monto_total') ?? 0 }};
+
+    // Gráfico de barras
+    const dataBarras = new google.visualization.DataTable();
+    dataBarras.addColumn('string', 'Categoría');
+    dataBarras.addColumn('number', 'Monto');
+    dataBarras.addColumn({type:'string', role:'style'});
+    dataBarras.addRows([
+        ['Gastos',   totalGastos,   'color:#D85A30'],
+        ['Ingresos', totalIngresos, 'color:#1D9E75'],
+        ['Ahorros',  totalAhorros,  'color:#3266ad'],
+        ['Deudas',   totalDeudas,   'color:#BA7517'],
+    ]);
+
+    const optsBarras = {
+        legend: { position: 'none' },
+        backgroundColor: 'transparent',
+        chartArea: { width:'80%', height:'75%' },
+        vAxis: { format: '$#,##0' },
+        bar: { groupWidth: '55%' },
+        animation: { startup: true, duration: 800, easing: 'out' }
+    };
+
+    const barChart = new google.visualization.ColumnChart(document.getElementById('chartBarras'));
+    barChart.draw(dataBarras, optsBarras);
+
+    // Gráfico de pie
+    const dataPie = new google.visualization.DataTable();
+    dataPie.addColumn('string', 'Categoría');
+    dataPie.addColumn('number', 'Monto');
+    dataPie.addRows([
+        ['Gastos',   totalGastos],
+        ['Ingresos', totalIngresos],
+        ['Ahorros',  totalAhorros],
+        ['Deudas',   totalDeudas],
+    ]);
+
+    const optsPie = {
+        pieHole: 0.5,
+        colors: ['#D85A30', '#1D9E75', '#3266ad', '#BA7517'],
+        backgroundColor: 'transparent',
+        chartArea: { width:'85%', height:'80%' },
+        legend: { position: 'bottom', textStyle: { fontSize: 11 } },
+        animation: { startup: true, duration: 800, easing: 'out' }
+    };
+
+    const pieChart = new google.visualization.PieChart(document.getElementById('chartPie'));
+    pieChart.draw(dataPie, optsPie);
+}
+</script>
 </body>
 </html>
