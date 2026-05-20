@@ -374,6 +374,8 @@
             <h5 style="margin:0; color:#0F6E56;">📊 Gráficos de Finanzas</h5>
             <button onclick="cerrarGraficos()" style="background:none; border:none; font-size:20px; cursor:pointer;">✕</button>
         </div>
+
+        {{-- Gráficas 1 --}}
         <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;">
             <div>
                 <h6 style="text-align:center; color:#888780; font-size:11px; text-transform:uppercase; letter-spacing:.08em; margin-bottom:1rem;">Gastos vs Ingresos</h6>
@@ -384,6 +386,30 @@
                 <div id="chartPie" style="height:300px;"></div>
             </div>
         </div>
+
+        {{-- Gráficas 2--}}
+        <hr style="border:none; border-top:1px solid #D3D1C7; margin:1.5rem 0;">
+
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:1.5rem;">
+            <div>
+                <p style="text-align:center; font-size:11px; color:#888780; text-transform:uppercase; letter-spacing:.08em; margin-bottom:.5rem;">Gastos por tipo</p>
+                <div id="legend-tipo-modal" style="display:flex; flex-wrap:wrap; gap:6px; margin-bottom:10px; font-size:12px; justify-content:center;"></div>
+                <div style="position:relative; height:220px;">
+                    <canvas id="chartTipoModal"></canvas>
+                </div>
+            </div>
+            <div>
+                <p style="text-align:center; font-size:11px; color:#888780; text-transform:uppercase; letter-spacing:.08em; margin-bottom:.5rem;">Ingresos vs Deudas — tendencia mensual</p>
+                <div style="display:flex; gap:12px; margin-bottom:10px; font-size:12px; color:#888780; justify-content:center;">
+                     <span><span style="display:inline-block;width:10px;height:10px;background:#1D9E75;margin-right:4px;vertical-align:middle;"></span>Ingresos</span>
+                     <span><span style="display:inline-block;width:10px;height:10px;background:#D85A30;margin-right:4px;vertical-align:middle;"></span>Deudas</span>
+                    </div>
+                <div style="position:relative; height:220px;">
+                    <canvas id="chartMesModal"></canvas>
+                </div>
+            </div>
+        </div>
+
     </div>
 </div>
 
@@ -394,6 +420,7 @@ google.charts.load('current', {'packages':['corechart', 'bar']});
 function mostrarGraficos() {
     document.getElementById('modalGraficos').style.display = 'flex';
     google.charts.setOnLoadCallback(dibujarGraficos);
+    dibujarGraficosNuevos(); // <-- agrega esta línea
 }
 
 function cerrarGraficos() {
@@ -452,6 +479,154 @@ function dibujarGraficos() {
 
     const pieChart = new google.visualization.PieChart(document.getElementById('chartPie'));
     pieChart.draw(dataPie, optsPie);
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+@php
+    $anioActual = now()->year;
+
+    $gpt = \App\Models\Gasto::selectRaw('tipo, SUM(monto) as total')
+        ->groupBy('tipo')
+        ->pluck('total', 'tipo');
+
+    $ingresosPorMes = array_fill(0, 12, 0);
+    \App\Models\Ingreso::whereYear('fecha', $anioActual)
+        ->selectRaw('MONTH(fecha) as mes, SUM(monto) as total')
+        ->groupBy('mes')
+        ->get()
+        ->each(fn($r) => $ingresosPorMes[$r->mes - 1] = (float) $r->total);
+
+    $deudasPorMes = array_fill(0, 12, 0);
+    \App\Models\Deuda::whereYear('created_at', $anioActual)
+        ->selectRaw('MONTH(created_at) as mes, SUM(monto_total) as total')
+        ->groupBy('mes')
+        ->get()
+        ->each(fn($r) => $deudasPorMes[$r->mes - 1] = (float) $r->total);
+@endphp
+
+
+<script>
+const gastosPorTipo     = @json($gpt);
+const ingresosPorMes = @json($ingresosPorMes);
+const deudasPorMes   = @json($deudasPorMes);
+
+const COLORES = {
+    comida:          { bg: 'rgba(216,90,48,.7)',   border: '#D85A30' },
+    transporte:      { bg: 'rgba(50,102,173,.7)',  border: '#3266ad' },
+    entretenimiento: { bg: 'rgba(186,117,23,.7)',  border: '#BA7517' },
+    salud:           { bg: 'rgba(29,158,117,.7)',  border: '#1D9E75' },
+    otro:            { bg: 'rgba(136,135,128,.7)', border: '#888780' },
+};
+
+const MESES = ['Ene','Feb','Mar','Abr','May','Jun','Jul','Ago','Sep','Oct','Nov','Dic'];
+
+let instTipo = null;
+let instMes  = null;
+
+function dibujarGraficosNuevos() {
+    if (instTipo) { instTipo.destroy(); instTipo = null; }
+    if (instMes)  { instMes.destroy();  instMes  = null; }
+
+    const keys   = Object.keys(gastosPorTipo);
+    const labels = keys.map(k => k.charAt(0).toUpperCase() + k.slice(1));
+    const valores = keys.map(k => gastosPorTipo[k]);
+    const bgs    = keys.map(k => (COLORES[k] || { bg: '#ccc' }).bg);
+    const borders= keys.map(k => (COLORES[k] || { border: '#999' }).border);
+
+    document.getElementById('legend-tipo-modal').innerHTML = keys.map((k, i) =>
+        `<span style="display:inline-flex;align-items:center;gap:4px;">
+            <span style="width:10px;height:10px;border-radius:50%;background:${bgs[i]};display:inline-block;"></span>
+            ${labels[i]}
+        </span>`
+    ).join('');
+
+    instTipo = new Chart(document.getElementById('chartTipoModal'), {
+        type: 'doughnut',
+        data: {
+            labels,
+            datasets: [{ data: valores, backgroundColor: bgs, borderColor: borders, borderWidth: 1.5 }]
+        },
+        options: {
+            responsive: true,
+            maintainAspectRatio: false,
+            cutout: '60%',
+            plugins: {
+                legend: { display: false },
+                tooltip: { callbacks: { label: c => ' $' + Number(c.parsed).toLocaleString('es-MX', { minimumFractionDigits: 2 }) } }
+            }
+        }
+    });
+
+   instMes = new Chart(document.getElementById('chartMesModal'), {
+    type: 'line',
+    data: {
+        labels: MESES,
+        datasets: [
+            {
+                label: 'Ingresos',
+                data: [
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 1)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 2)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 3)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 4)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 5)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 6)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 7)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 8)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 9)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 10)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 11)->sum('monto') }},
+                    {{ \App\Models\Ingreso::whereYear('fecha', now()->year)->whereMonth('fecha', 12)->sum('monto') }}
+                ],
+                borderColor: '#1D9E75',
+                backgroundColor: 'rgba(29,158,117,.1)',
+                borderWidth: 2,
+                pointRadius: 4,
+                pointBackgroundColor: '#1D9E75',
+                fill: true,
+                tension: 0.4,
+            },
+            {
+                label: 'Deudas',
+                 data: [ 
+                    {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 1)->sum('monto_total') }},
+                    {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 2)->sum('monto_total') }},
+                    {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 3)->sum('monto_total') }},
+                     {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 4)->sum('monto_total') }},
+                     {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 5)->sum('monto_total') }},
+                     {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 6)->sum('monto_total') }},
+                     {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 7)->sum('monto_total') }},
+                     {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 8)->sum('monto_total') }},
+                     {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 9)->sum('monto_total') }},
+                     {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 10)->sum('monto_total') }},
+                     {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 11)->sum('monto_total') }},
+                     {{ \App\Models\Deuda::whereYear('created_at', now()->year)->whereMonth('created_at', 12)->sum('monto_total') }}
+                    ],
+                    
+                    borderColor: '#D85A30',
+                    backgroundColor: 'rgba(216,90,48,.1)',
+                    borderWidth: 2,
+                    pointRadius: 4,
+                    pointBackgroundColor: '#D85A30',
+                    fill: true,
+                    tension: 0.4,
+            }
+        ]
+    },
+    options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        interaction: { mode: 'index', intersect: false },
+        plugins: {
+            legend: { display: true, position: 'top', labels: { font: { size: 11 }, boxWidth: 12 } },
+            tooltip: { callbacks: { label: c => ' ' + c.dataset.label + ': $' + Number(c.parsed.y).toLocaleString('es-MX', { minimumFractionDigits: 2 }) } }
+        },
+        scales: {
+            x: { grid: { display: false }, ticks: { font: { size: 11 } } },
+            y: { grid: { color: 'rgba(0,0,0,.06)' }, ticks: { font: { size: 11 }, callback: v => '$' + Number(v).toLocaleString('es-MX') } }
+        }
+    }
+});
 }
 </script>
 </body>
