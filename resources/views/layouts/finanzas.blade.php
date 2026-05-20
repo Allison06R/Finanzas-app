@@ -343,7 +343,7 @@
         </div>
         <div style="display:flex; align-items:center; gap:8px;">
              @if(auth()->user()->isAdmin())
-                <button style="background:#D85A30; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer;">📄 PDF</button>
+              <button onclick="generarPDF()" style="background:#D85A30; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer;">📄 PDF</button>
                 <button onclick="mostrarGraficos()" style="background:#3266ad; color:white; border:none; border-radius:8px; padding:6px 14px; font-size:12px; cursor:pointer;">📊 Gráficos</button>
             @endif
     <div class="fecha-badge">{{ now()->locale('es')->isoFormat('D MMMM YYYY') }}</div> 
@@ -627,6 +627,153 @@ function dibujarGraficosNuevos() {
         }
     }
 });
+}
+</script>
+<script>
+async function generarPDF() {
+    const btnPDF = document.querySelector('button[onclick="generarPDF()"]');
+    const textoOriginal = btnPDF.textContent;
+    btnPDF.disabled = true;
+    btnPDF.textContent = '⏳ Generando...';
+
+    try {
+    
+        await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/jspdf/2.5.1/jspdf.umd.min.js');
+        await cargarScript('https://cdnjs.cloudflare.com/ajax/libs/html2canvas/1.4.1/html2canvas.min.js');
+
+       
+        const modal = document.getElementById('modalGraficos');
+        modal.style.display = 'flex';
+
+        // Google Charts (barras + pie)
+        await new Promise(resolve => {
+            google.charts.setOnLoadCallback(() => {
+                dibujarGraficos();
+                resolve();
+            });
+        });
+
+        // Chart.js (donut tipos + línea mensual)
+        dibujarGraficosNuevos();
+
+        await new Promise(r => setTimeout(r, 1200));
+
+       
+        const contenido = modal.querySelector(':scope > div');
+        const canvas = await html2canvas(contenido, {
+            scale: 2,
+            useCORS: true,
+            backgroundColor: '#ffffff',
+            logging: false,
+        });
+
+     
+        const { jsPDF } = window.jspdf;
+        const doc   = new jsPDF('p', 'mm', 'a4');
+        const pageW = doc.internal.pageSize.getWidth();
+        const pageH = doc.internal.pageSize.getHeight();
+        const margin = 14;
+        let y = margin;
+
+
+        doc.setFillColor(15, 110, 86);
+        doc.rect(0, 0, pageW, 28, 'F');
+        doc.setTextColor(159, 225, 203);
+        doc.setFontSize(18);
+        doc.setFont('helvetica', 'bold');
+        doc.text('FinanzasApp', margin, 18);
+        doc.setFontSize(9);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Reporte — ' + new Date().toLocaleDateString('es-SV'), pageW - margin, 18, { align: 'right' });
+        y = 38;
+
+
+        doc.setTextColor(136, 135, 128);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.text('RESUMEN GENERAL', margin, y);
+        y += 6;
+
+        const totalGastos   = {{ \App\Models\Gasto::sum('monto') ?? 0 }};
+        const totalIngresos = {{ \App\Models\Ingreso::sum('monto') ?? 0 }};
+        const totalAhorros  = {{ \App\Models\Ahorro::sum('monto_actual') ?? 0 }};
+        const totalDeudas   = {{ \App\Models\Deuda::sum('monto_total') ?? 0 }};
+        const balance       = totalIngresos - totalGastos;
+
+        const fmt = n => '$' + Number(n).toLocaleString('es-SV', { minimumFractionDigits: 2 });
+
+        const filas = [
+            ['Ingresos totales',            fmt(totalIngresos), [29, 158, 117]],
+            ['Gastos totales',              fmt(totalGastos),   [216, 90, 48]],
+            ['Ahorros totales',             fmt(totalAhorros),  [50, 102, 173]],
+            ['Deudas totales',              fmt(totalDeudas),   [186, 117, 23]],
+        ];
+
+        filas.forEach(([label, valor, color]) => {
+            doc.setFillColor(248, 248, 245);
+            doc.roundedRect(margin, y, pageW - margin * 2, 10, 2, 2, 'F');
+            doc.setTextColor(26, 26, 24);
+            doc.setFontSize(10);
+            doc.setFont('helvetica', 'normal');
+            doc.text(label, margin + 4, y + 7);
+            doc.setTextColor(...color);
+            doc.setFont('helvetica', 'bold');
+            doc.text(valor, pageW - margin - 4, y + 7, { align: 'right' });
+            y += 13;
+        });
+
+        y += 8;
+
+        // ── Gráficos (captura del modal) ─────────────────
+        doc.setTextColor(136, 135, 128);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'bold');
+        doc.text('GRÁFICOS', margin, y);
+        y += 5;
+
+        const imgData = canvas.toDataURL('image/png');
+        const imgW    = pageW - margin * 2;
+        const imgH    = (canvas.height * imgW) / canvas.width;
+
+      
+        if (y + imgH > pageH - margin) {
+            doc.addPage();
+            y = margin;
+        }
+        doc.addImage(imgData, 'PNG', margin, y, imgW, imgH);
+
+        // ── Pie de página ────────────────────────────────
+        doc.setDrawColor(211, 209, 199);
+        doc.line(margin, pageH - 12, pageW - margin, pageH - 12);
+        doc.setTextColor(136, 135, 128);
+        doc.setFontSize(8);
+        doc.setFont('helvetica', 'normal');
+        doc.text('Generado por FinanzasApp', margin, pageH - 6);
+        doc.text('Pág. 1', pageW - margin, pageH - 6, { align: 'right' });
+
+        doc.save('reporte-finanzas.pdf');
+
+     
+        modal.style.display = 'none';
+
+    } catch (err) {
+        console.error('Error generando PDF:', err);
+        alert('Error al generar el PDF: ' + err.message);
+    } finally {
+        btnPDF.disabled = false;
+        btnPDF.textContent = textoOriginal;
+    }
+}
+
+function cargarScript(src) {
+    return new Promise((resolve, reject) => {
+        if (document.querySelector('script[src="' + src + '"]')) { resolve(); return; }
+        const s = document.createElement('script');
+        s.src = src;
+        s.onload = resolve;
+        s.onerror = reject;
+        document.head.appendChild(s);
+    });
 }
 </script>
 </body>
